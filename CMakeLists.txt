@@ -20,7 +20,8 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
-find_package(dvl_msgs REQUIRED)
+find_package(marine_acoustic_msgs REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
@@ -54,7 +55,8 @@ ament_target_dependencies(${PROJECT_NAME}_node
   rclcpp_lifecycle
   std_msgs
   geometry_msgs
-  dvl_msgs
+  marine_acoustic_msgs
+  tf2_geometry_msgs
 )
 # Link node to library compiled above and install it in the correct location
 TARGET_LINK_LIBRARIES(${PROJECT_NAME}_node ${PROJECT_NAME})

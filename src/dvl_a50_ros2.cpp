@@ -2,18 +2,17 @@
 #include <chrono>
 #include <cstdlib>
 #include <iomanip>
+#include <cmath>
 
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp/publisher.hpp>
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 #include <rclcpp_lifecycle/lifecycle_publisher.hpp>
 
-#include "std_msgs/msg/string.hpp"
-
-#include "dvl_msgs/msg/velocity_report.hpp"
-#include "dvl_msgs/msg/dvl_beam.hpp"
-#include "dvl_msgs/msg/dead_reckoning_report.hpp"
-#include "dvl_msgs/srv/send_command.hpp"
+#include <std_srvs/srv/trigger.hpp>
+#include <sensor_msgs/msg/odometry.hpp"
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include <marine_acoustic_msgs/msgs/dvl.hpp>
 
 #include "dvl_a50/dvl_a50.hpp"
 
@@ -56,7 +55,7 @@ public:
         }
 
         // Configure
-        int speed_of_sound = this->get_parameter("speed_of_sound").as_int();
+        speed_of_sound = this->get_parameter("speed_of_sound").as_int();
         bool enabled = this->get_parameter("enable_on_start").as_bool();
         bool led_enabled = this->get_parameter("led_enabled").as_bool();
         int mountig_rotation_offset = this->get_parameter("mountig_rotation_offset").as_int();
@@ -69,8 +68,8 @@ public:
         }
 
          //Publishers
-        dvl_pub_report = this->create_publisher<dvl_msgs::msg::VelocityReport>("dvl/velocity", qos);
-        dvl_pub_pos = this->create_publisher<dvl_msgs::msg::DeadReckoningReport>("dvl/position", qos);
+        dvl_pub_report = this->create_publisher<marine_acoustic_msgs::msg::Dvl>("dvl/velocity", qos);
+        dvl_pub_pos = this->create_publisher<sensor_msgs::msg::Odometry>("dvl/position", qos);
 
         return CallbackReturn::SUCCESS;
     }
@@ -158,27 +157,24 @@ public:
 
         if (res.type == Response::VelocityReport)
         {
-            dvl_msgs::msg::VelocityReport msg;
-            dvl_msgs::msg::DVLBeam beam0;
-            dvl_msgs::msg::DVLBeam beam1;
-            dvl_msgs::msg::DVLBeam beam2;
-            dvl_msgs::msg::DVLBeam beam3;
-
+            marine_acoustic_msgs::msg::Dvl msg;
+            
             msg.header.frame_id = frame;
-            msg.header.stamp = LifecycleNode::now();
-                
-            msg.time = double(json_data["time"]);
+            msg.header.stamp = rclcpp::Time(uint64_t(json_data["time_of_validity"]) * 1000);
+
+            msg.velocity_mode = marine_acoustic_msgs::msg::Dvl::DVL_MODE_BOTTOM;
+            msg.dvl_type = marine_acoustic_msgs::msg::Dvl::DVL_TYPE_PISTON;
+            
             msg.velocity.x = double(json_data["vx"]);
             msg.velocity.y = double(json_data["vy"]);
             msg.velocity.z = double(json_data["vz"]);
-            msg.fom = double(json_data["fom"]);
-
+            
             for (size_t i = 0; i < 3; i++)
             {
                 for (size_t j = 0; j < 3; j++)
                 {
                     double val = double(json_data["covariance"][i][j])
-                    msg.covariance.push_back(val);
+                    msg.velocity_covar.push_back(val);
                 }
             }
 
@@ -188,69 +184,71 @@ public:
             else
                 msg.altitude = old_altitude;
 
-            msg.time_of_validity = uint64_t(json_data["time_of_validity"]);
-            msg.time_of_transmission = uint64_t(json_data["time_of_transmission"]);
+            msg.course_gnd = std::atan2(msg.velocity.y, msg.velocity.x);
+            msg.speed_gnd = std::sqrt(msg.velocity.x * msg.velocity.x + msg.velocity.y * msg.velocity.y);
 
-            msg.velocity_valid = json_data["velocity_valid"];
-            msg.status = uint8_t(json_data["status"]);
-            msg.form = json_data["format"];
-                    
-            beam0.id = json_data["transducers"][0]["id"];
-            beam0.velocity = double(json_data["transducers"][0]["velocity"]);
-            beam0.distance = double(json_data["transducers"][0]["distance"]);
-            beam0.rssi = double(json_data["transducers"][0]["rssi"]);
-            beam0.nsd = double(json_data["transducers"][0]["nsd"]);
-            beam0.valid = json_data["transducers"][0]["beam_valid"];
-                    
-            beam1.id = json_data["transducers"][1]["id"];
-            beam1.velocity = double(json_data["transducers"][1]["velocity"]);
-            beam1.distance = double(json_data["transducers"][1]["distance"]);
-            beam1.rssi = double(json_data["transducers"][1]["rssi"]);
-            beam1.nsd = double(json_data["transducers"][1]["nsd"]);
-            beam1.valid = json_data["transducers"][1]["beam_valid"];
-                    
-            beam2.id = json_data["transducers"][2]["id"];
-            beam2.velocity = double(json_data["transducers"][2]["velocity"]);
-            beam2.distance = double(json_data["transducers"][2]["distance"]);
-            beam2.rssi = double(json_data["transducers"][2]["rssi"]);
-            beam2.nsd = double(json_data["transducers"][2]["nsd"]);
-            beam2.valid = json_data["transducers"][2]["beam_valid"];
-                    
-            beam3.id = json_data["transducers"][3]["id"];
-            beam3.velocity = double(json_data["transducers"][3]["velocity"]);
-            beam3.distance = double(json_data["transducers"][3]["distance"]);
-            beam3.rssi = double(json_data["transducers"][3]["rssi"]);
-            beam3.nsd = double(json_data["transducers"][3]["nsd"]);
-            beam3.valid = json_data["transducers"][3]["beam_valid"];
-                    
-            msg.beams = {beam0, beam1, beam2, beam3};
+            msg.sound_speed = speed_of_sound;
+            msg.beam_ranges_valid = true;
+            msg.beam_velocities_valid = true;
+
+            // Beam specific data
+            for (size_t beam = 0; beam < 4; beam++)
+            {
+                msg.num_good_beams += json_data["transducers"][beam]["beam_valid"];
+                msg.range = json_data["transducers"][beam]["distance"];
+                //msg.range_covar
+                msg.beam_quality = json_data["transducers"][beam]["rssi"];
+                msg.beam_velocity = json_data["transducers"][beam]["velocity"];
+                //msg.beam_velocity_covar
+            }
+
+            /*
+             * Beams point 22.5° away from center, LED pointing forward
+             * Transducers rotated 45° around Z
+             */
+            // Beam 1 (+135° from X)
+            msg.beam_unit_vec[0].x = -0.6532814824381883
+            msg.beam_unit_vec[0].y =  0.6532814824381883
+            msg.beam_unit_vec[0].z =  0.38268343236508984
+
+            // Beam 2 (-135° from X)
+            msg.beam_unit_vec[1].x = -0.6532814824381883
+            msg.beam_unit_vec[1].y = -0.6532814824381883
+            msg.beam_unit_vec[1].z =  0.38268343236508984
+
+            // Beam 3 (-45° from X)
+            msg.beam_unit_vec[2].x =  0.6532814824381883
+            msg.beam_unit_vec[2].y = -0.6532814824381883
+            msg.beam_unit_vec[2].z =  0.38268343236508984
+
+            // Beam 4 (+45° from X)
+            msg.beam_unit_vec[3].x =  0.6532814824381883
+            msg.beam_unit_vec[3].y =  0.6532814824381883
+            msg.beam_unit_vec[3].z =  0.38268343236508984
+
             velocity_pub->publish(msg);
         }
         else if (res.type == Response::DeadReckoningReport)
         {
-            dvl_msgs::msg::DeadReckoningReport msg;
-
-            //std::cout << std::setw(4) << json_data << std::endl;
+            sensor_msgs::msg::Odometry msg;
+            
             msg.header.frame_id = frame;
-            msg.header.stamp = LifecycleNode::now();
+            msg.header.stamp = rclcpp::Time(static_cast<uint64_t>(double(json_data["ts"])) * 1e9);
 
-            msg.time = double(json_data["ts"]);
+            msg.pose.pose.position.x = double(json_data["x"]);
+            msg.pose.pose.position.y = double(json_data["y"]);
+            msg.pose.pose.position.z = double(json_data["z"]);
 
-            msg.position.x = double(json_data["x"]);
-            msg.position.y = double(json_data["y"]);
-            msg.position.z = double(json_data["z"]);
+            double std_dev = double(json_data["std"]);
+            msg.pose.covariance[0] = std_dev;
+            msg.pose.covariance[7] = std_dev;
+            msg.pose.covariance[14] = std_dev;
 
-            msg.pos_std = double(json_data["std"]);
+            tf2::Quaternion quat;
+            quat.setRPY(double(json_data["roll"]), double(json_data["pitch"]), double(json_data["yaw"]))
+            msg.pose.pose.orientation = tf2::toMsg(quat);
 
-            msg.roll = double(json_data["roll"]);
-            msg.pitch = double(json_data["pitch"]);
-            msg.yaw = double(json_data["yaw"]);
-
-            msg.type = json_data["type"];
-            msg.status = json_data["status"];
-            msg.format = json_data["format"];
-
-            dead_reckoning_pub->publish(msg);
+            odom_pub->publish(msg);
         }
         else
         {
@@ -261,34 +259,24 @@ public:
 
     void send_command(
         std::string command,
-        dvl_msgs::srv::DvlCommand::Request::SharedPtr req,
-        dvl_msgs::srv::DvlCommand::Response::SharedPtr res)
+        std_srvs::srv::Trigger::Request::SharedPtr req,
+        std_srvs::srv::Trigger::Response::SharedPtr res)
     {
         Response res_json = json.send_command(command);
-        
-        res->response_to = json_data["response_to"];
         res->success = json_data["success"];
-        res->error_message = json_data["error_message"];
-        res->result = json_data["result"];
-        res->format = json_data["format"];
-        res->type = json_data["type"];
+        res->message = json_data["error_message"];
     }
 
     template<type T>
     void send_param(
         std::string param,
         const T& value,
-        dvl_msgs::srv::DvlCommand::Request::SharedPtr req,
-        dvl_msgs::srv::DvlCommand::Response::SharedPtr res)
+        std_srvs::srv::Trigger::Request::SharedPtr req,
+        std_srvs::srv::Trigger::Response::SharedPtr res)
     {
         Response res_json = json.send_config_param(param, value);
-        
-        res->response_to = json_data["response_to"];
         res->success = json_data["success"];
-        res->error_message = json_data["error_message"];
-        res->result = json_data["result"];
-        res->format = json_data["format"];
-        res->type = json_data["type"];
+        res->message = json_data["error_message"];
     }
 
 
@@ -298,17 +286,19 @@ private:
     std::string ip_address;
     std::string frame;
     double rate;
+    int speed_of_sound;
     double old_altitude;
     
     rclcpp::TimerBase::SharedPtr timer;
-    rclcpp_lifecycle::LifecyclePublisher<dvl_msgs::msg::VelocityReport>::SharedPtr velocity_pub;
-    rclcpp_lifecycle::LifecyclePublisher<dvl_msgs::msg::DeadReckoningReport>::SharedPtr dead_reckoning_pub;
-    rclcpp::Service<dvl_msgs::srv::DvlCommand>::SharedPtr enable_srv;
-    rclcpp::Service<dvl_msgs::srv::DvlCommand>::SharedPtr disable_srv;
-    rclcpp::Service<dvl_msgs::srv::DvlCommand>::SharedPtr get_config_srv;
-    rclcpp::Service<dvl_msgs::srv::DvlCommand>::SharedPtr calibrate_gyro_srv;
-    rclcpp::Service<dvl_msgs::srv::DvlCommand>::SharedPtr reset_dead_reckoning_srv;
-    rclcpp::Service<dvl_msgs::srv::DvlCommand>::SharedPtr trigger_ping_srv;
+    rclcpp_lifecycle::LifecyclePublisher<marine_acoustic_msgs::msg::Dvl>::SharedPtr velocity_pub;
+    rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::Odometry>::SharedPtr odom_pub;
+
+    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr enable_srv;
+    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr disable_srv;
+    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr get_config_srv;
+    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr calibrate_gyro_srv;
+    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reset_dead_reckoning_srv;
+    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr trigger_ping_srv;
 }
 
 
