@@ -10,9 +10,9 @@
 #include <rclcpp_lifecycle/lifecycle_publisher.hpp>
 
 #include <std_srvs/srv/trigger.hpp>
-#include <sensor_msgs/msg/odometry.hpp"
+#include <nav_msgs/msg/odometry.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
-#include <marine_acoustic_msgs/msgs/dvl.hpp>
+#include <marine_acoustic_msgs/msg/dvl.hpp>
 
 #include "dvl_a50/dvl_a50.hpp"
 
@@ -28,9 +28,9 @@ public:
     {
         this->declare_parameter<std::string>("ip_address", "192.168.194.95");
         this->declare_parameter<std::string>("frame", "dvl_a50_link");
-        this->declare_parameter<double>("rate", 15.0);
+        this->declare_parameter<double>("rate", 30.0);
         this->declare_parameter<int>("speed_of_sound", 1500);
-        this->declare_parameter<bool>("enable_on_start", true);
+        this->declare_parameter<bool>("enable_on_activate", true);
         this->declare_parameter<bool>("enable_led", true);
         this->declare_parameter<int>("mountig_rotation_offset", 0);
         this->declare_parameter<std::string>("range_mode", "auto");
@@ -50,26 +50,22 @@ public:
         int success = dvl.connect(ip_address, false);
         if (success != 0)
         {
-            RCLCPP_ERROR("Connection failed with error code %i", success);
+            RCLCPP_ERROR(get_logger(), "Connection failed with error code %i", success);
             return CallbackReturn::FAILURE;
         }
 
         // Configure
         speed_of_sound = this->get_parameter("speed_of_sound").as_int();
-        bool enabled = this->get_parameter("enable_on_start").as_bool();
+        enable_on_activate = this->get_parameter("enable_on_activate").as_bool();
         bool led_enabled = this->get_parameter("led_enabled").as_bool();
         int mountig_rotation_offset = this->get_parameter("mountig_rotation_offset").as_int();
         std::string range_mode = this->get_parameter("range_mode").as_string();
         
-        Response res = dvl.send_config(speed_of_sound, enabled, led_enabled, mountig_rotation_offset, range_mode);
-        if (!res.success)
-        {
-            RCLCPP_WARN("Configure failed: %s", res.error_message);
-        }
-
+        dvl.configure(speed_of_sound, false, led_enabled, mountig_rotation_offset, range_mode);
+        
          //Publishers
-        dvl_pub_report = this->create_publisher<marine_acoustic_msgs::msg::Dvl>("dvl/velocity", qos);
-        dvl_pub_pos = this->create_publisher<sensor_msgs::msg::Odometry>("dvl/position", qos);
+        velocity_pub = this->create_publisher<marine_acoustic_msgs::msg::Dvl>("dvl/velocity", 10);
+        odom_pub = this->create_publisher<nav_msgs::msg::Odometry>("dvl/position", 10);
 
         return CallbackReturn::SUCCESS;
     }
@@ -78,36 +74,41 @@ public:
     {
         LifecycleNode::on_activate(state);
 
-        dvl_pub_report->on_activate();
-        dvl_pub_pos->on_activate();
+        if (enable_on_activate)
+        {
+            dvl.set_acoustic_enabled(true);
+        }
+
+        velocity_pub->on_activate();
+        odom_pub->on_activate();
         
         // Services
-        enable_srv = this->create_service<dvl_msgs::srv::SendCommand>(
+        enable_srv = this->create_service<std_srvs::srv::Trigger>(
             "enable", 
-            bind(&DvlA50::send_param, this, "acoustic_enabled", true, std::_1, std::_2));
+            bind(&DvlA50Node::send_param<bool>, this, "acoustic_enabled", true, std::placeholders::_1, std::placeholders::_2));
 
-        disable_srv = this->create_service<dvl_msgs::srv::SendCommand>(
+        disable_srv = this->create_service<std_srvs::srv::Trigger>(
             "disable", 
-            bind(&DvlA50::send_param, this, "acoustic_enabled", false, std::_1, std::_2));
+            bind(&DvlA50Node::send_param<bool>, this, "acoustic_enabled", false, std::placeholders::_1, std::placeholders::_2));
 
-        get_config_srv = this->create_service<dvl_msgs::srv::SendCommand>(
+        get_config_srv = this->create_service<std_srvs::srv::Trigger>(
             "get_config", 
-            bind(&DvlA50::send_command, this, "get_config", std::_1, std::_2));
+            bind(&DvlA50Node::send_command, this, "get_config", std::placeholders::_1, std::placeholders::_2));
 
-        calibrate_gyro_srv = this->create_service<dvl_msgs::srv::SendCommand>(
+        calibrate_gyro_srv = this->create_service<std_srvs::srv::Trigger>(
             "calibrate_gyro", 
-            bind(&DvlA50::send_command, this, "calibrate_gyro", std::_1, std::_2));
+            bind(&DvlA50Node::send_command, this, "calibrate_gyro", std::placeholders::_1, std::placeholders::_2));
 
-        reset_dead_reckoning_srv = this->create_service<dvl_msgs::srv::SendCommand>(
+        reset_dead_reckoning_srv = this->create_service<std_srvs::srv::Trigger>(
             "reset_dead_reckoning", 
-            bind(&DvlA50::send_command, this, "reset_dead_reckoning", std::_1, std::_2));
+            bind(&DvlA50Node::send_command, this, "reset_dead_reckoning", std::placeholders::_1, std::placeholders::_2));
 
-        trigger_ping_srv = this->create_service<dvl_msgs::srv::SendCommand>(
+        trigger_ping_srv = this->create_service<std_srvs::srv::Trigger>(
             "trigger_ping", 
-            bind(&DvlA50::send_command, this, "trigger_ping", std::_1, std::_2));
+            bind(&DvlA50Node::send_command, this, "trigger_ping", std::placeholders::_1, std::placeholders::_2));
 
         // Start reading data
-        RCLCPP_INFO("Starting to receive reports at <= %f Hz", rate);
+        RCLCPP_INFO(get_logger(), "Starting to receive reports at <= %f Hz", rate);
         timer = this->create_wall_timer(
             std::chrono::duration<double>(1. / rate), 
             std::bind(&DvlA50Node::publish, this)
@@ -119,13 +120,14 @@ public:
     CallbackReturn on_deactivate(const rclcpp_lifecycle::State& state)
     {
         LifecycleNode::on_deactivate(state);
-        RCLCPP_INFO("Stopping report reception");
+        RCLCPP_INFO(get_logger(), "Stopping report reception");
 
         // Stop reading data
+        dvl.set_acoustic_enabled(false);
         timer->cancel();
 
-        dvl_pub_report->on_deactivate();
-        dvl_pub_pos->on_deactivate();
+        velocity_pub->on_deactivate();
+        odom_pub->on_deactivate();
 
         return CallbackReturn::SUCCESS;
     }
@@ -135,8 +137,8 @@ public:
         dvl.disconnect();
         timer.reset();
 
-        dvl_pub_report.reset();
-        dvl_pub_pos.reset();
+        velocity_pub.reset();
+        odom_pub.reset();
 
         get_config_srv.reset();
         calibrate_gyro_srv.reset();
@@ -153,33 +155,54 @@ public:
 
     void publish()
     {
-        Response res = dvl.receive();
+        DvlA50::Message res = dvl.receive();
 
-        if (res.type == Response::VelocityReport)
+        if (res.contains("response_to"))
         {
+            // TODO check if we have a pending service call for this command and release it
+            std::string trigger = res["response_to"];
+
+            // Command response
+            if (res["success"])
+            {
+                RCLCPP_INFO(get_logger(), "%s: success", trigger.c_str());
+            }
+            else
+            {
+                RCLCPP_ERROR(get_logger(), "%s failed: %s", trigger.c_str(), res["error_message"].dump().c_str());
+            }
+
+            if (trigger == "get_config")
+            {
+                RCLCPP_INFO(get_logger(), "get_config: %s", res["result"].dump().c_str());
+            }
+        }
+        else if(res.contains("altitude"))
+        {
+            // Velocity report
             marine_acoustic_msgs::msg::Dvl msg;
             
             msg.header.frame_id = frame;
-            msg.header.stamp = rclcpp::Time(uint64_t(json_data["time_of_validity"]) * 1000);
+            msg.header.stamp = rclcpp::Time(uint64_t(res["time_of_validity"]) * 1000);
 
             msg.velocity_mode = marine_acoustic_msgs::msg::Dvl::DVL_MODE_BOTTOM;
             msg.dvl_type = marine_acoustic_msgs::msg::Dvl::DVL_TYPE_PISTON;
             
-            msg.velocity.x = double(json_data["vx"]);
-            msg.velocity.y = double(json_data["vy"]);
-            msg.velocity.z = double(json_data["vz"]);
+            msg.velocity.x = double(res["vx"]);
+            msg.velocity.y = double(res["vy"]);
+            msg.velocity.z = double(res["vz"]);
             
             for (size_t i = 0; i < 3; i++)
             {
                 for (size_t j = 0; j < 3; j++)
                 {
-                    double val = double(json_data["covariance"][i][j])
-                    msg.velocity_covar.push_back(val);
+                    double val = double(res["covariance"][i][j]);
+                    msg.velocity_covar[i*3 + j] = val;
                 }
             }
 
-            double current_altitude = double(json_data["altitude"]);
-            if(current_altitude >= 0.0 && msg.velocity_valid)
+            double current_altitude = double(res["altitude"]);
+            if(current_altitude >= 0.0 && res["velocity_valid"])
                 old_altitude = msg.altitude = current_altitude;
             else
                 msg.altitude = old_altitude;
@@ -189,16 +212,16 @@ public:
 
             msg.sound_speed = speed_of_sound;
             msg.beam_ranges_valid = true;
-            msg.beam_velocities_valid = true;
+            msg.beam_velocities_valid = res["velocity_valid"];
 
             // Beam specific data
             for (size_t beam = 0; beam < 4; beam++)
             {
-                msg.num_good_beams += json_data["transducers"][beam]["beam_valid"];
-                msg.range = json_data["transducers"][beam]["distance"];
+                msg.num_good_beams += bool(res["transducers"][beam]["beam_valid"]);
+                msg.range = res["transducers"][beam]["distance"];
                 //msg.range_covar
-                msg.beam_quality = json_data["transducers"][beam]["rssi"];
-                msg.beam_velocity = json_data["transducers"][beam]["velocity"];
+                msg.beam_quality = res["transducers"][beam]["rssi"];
+                msg.beam_velocity = res["transducers"][beam]["velocity"];
                 //msg.beam_velocity_covar
             }
 
@@ -207,52 +230,53 @@ public:
              * Transducers rotated 45° around Z
              */
             // Beam 1 (+135° from X)
-            msg.beam_unit_vec[0].x = -0.6532814824381883
-            msg.beam_unit_vec[0].y =  0.6532814824381883
-            msg.beam_unit_vec[0].z =  0.38268343236508984
+            msg.beam_unit_vec[0].x = -0.6532814824381883;
+            msg.beam_unit_vec[0].y =  0.6532814824381883;
+            msg.beam_unit_vec[0].z =  0.38268343236508984;
 
             // Beam 2 (-135° from X)
-            msg.beam_unit_vec[1].x = -0.6532814824381883
-            msg.beam_unit_vec[1].y = -0.6532814824381883
-            msg.beam_unit_vec[1].z =  0.38268343236508984
+            msg.beam_unit_vec[1].x = -0.6532814824381883;
+            msg.beam_unit_vec[1].y = -0.6532814824381883;
+            msg.beam_unit_vec[1].z =  0.38268343236508984;
 
             // Beam 3 (-45° from X)
-            msg.beam_unit_vec[2].x =  0.6532814824381883
-            msg.beam_unit_vec[2].y = -0.6532814824381883
-            msg.beam_unit_vec[2].z =  0.38268343236508984
+            msg.beam_unit_vec[2].x =  0.6532814824381883;
+            msg.beam_unit_vec[2].y = -0.6532814824381883;
+            msg.beam_unit_vec[2].z =  0.38268343236508984;
 
             // Beam 4 (+45° from X)
-            msg.beam_unit_vec[3].x =  0.6532814824381883
-            msg.beam_unit_vec[3].y =  0.6532814824381883
-            msg.beam_unit_vec[3].z =  0.38268343236508984
+            msg.beam_unit_vec[3].x =  0.6532814824381883;
+            msg.beam_unit_vec[3].y =  0.6532814824381883;
+            msg.beam_unit_vec[3].z =  0.38268343236508984;
 
             velocity_pub->publish(msg);
         }
-        else if (res.type == Response::DeadReckoningReport)
+        else if (res.contains("pitch"))
         {
-            sensor_msgs::msg::Odometry msg;
+            // Dead reckoning report
+            nav_msgs::msg::Odometry msg;
             
             msg.header.frame_id = frame;
-            msg.header.stamp = rclcpp::Time(static_cast<uint64_t>(double(json_data["ts"])) * 1e9);
+            msg.header.stamp = rclcpp::Time(static_cast<uint64_t>(double(res["ts"])) * 1e9);
 
-            msg.pose.pose.position.x = double(json_data["x"]);
-            msg.pose.pose.position.y = double(json_data["y"]);
-            msg.pose.pose.position.z = double(json_data["z"]);
+            msg.pose.pose.position.x = double(res["x"]);
+            msg.pose.pose.position.y = double(res["y"]);
+            msg.pose.pose.position.z = double(res["z"]);
 
-            double std_dev = double(json_data["std"]);
+            double std_dev = double(res["std"]);
             msg.pose.covariance[0] = std_dev;
             msg.pose.covariance[7] = std_dev;
             msg.pose.covariance[14] = std_dev;
 
             tf2::Quaternion quat;
-            quat.setRPY(double(json_data["roll"]), double(json_data["pitch"]), double(json_data["yaw"]))
+            quat.setRPY(double(res["roll"]), double(res["pitch"]), double(res["yaw"]));
             msg.pose.pose.orientation = tf2::toMsg(quat);
 
             odom_pub->publish(msg);
         }
         else
         {
-            RCLCPP_WARN("Received unexpected DVL response of type %i: %s", res.type, res.data.dump().c_str());
+            RCLCPP_WARN(get_logger(), "Received unexpected DVL response: %s", res.dump().c_str());
         }
     }
 
@@ -262,19 +286,21 @@ public:
         std_srvs::srv::Trigger::Request::SharedPtr req,
         std_srvs::srv::Trigger::Response::SharedPtr res)
     {
-        Response res_json = json.send_command(command);
+        // TODO create future and wait
+        DvlA50::Message json_data = dvl.send_command(command);
         res->success = json_data["success"];
         res->message = json_data["error_message"];
     }
 
-    template<type T>
+    template<typename T>
     void send_param(
         std::string param,
         const T& value,
         std_srvs::srv::Trigger::Request::SharedPtr req,
         std_srvs::srv::Trigger::Response::SharedPtr res)
     {
-        Response res_json = json.send_config_param(param, value);
+        // TODO create future and wait
+        DvlA50::Message json_data = dvl.set(param, value);
         res->success = json_data["success"];
         res->message = json_data["error_message"];
     }
@@ -287,11 +313,12 @@ private:
     std::string frame;
     double rate;
     int speed_of_sound;
+    bool enable_on_activate;
     double old_altitude;
     
     rclcpp::TimerBase::SharedPtr timer;
     rclcpp_lifecycle::LifecyclePublisher<marine_acoustic_msgs::msg::Dvl>::SharedPtr velocity_pub;
-    rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::Odometry>::SharedPtr odom_pub;
+    rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub;
 
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr enable_srv;
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr disable_srv;
@@ -299,7 +326,7 @@ private:
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr calibrate_gyro_srv;
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reset_dead_reckoning_srv;
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr trigger_ping_srv;
-}
+};
 
 
 int main(int argc, char * argv[])

@@ -2,12 +2,13 @@
 
 
 using namespace dvl_a50;
+using nlohmann::json;
 
 
 int DvlA50::connect(std::string addr, bool enable)
 {
     // Open TCP/IP connection to DVL
-    tcp_socket = new tcp_socket((char*)addr.c_str(), 16171);
+    tcp_socket = new TCPSocket((char*)addr.c_str(), 16171);
     if(tcp_socket->Create() < 0) 
     {
         // Error creating the socket
@@ -20,8 +21,9 @@ int DvlA50::connect(std::string addr, bool enable)
     int error_code = 0;
     //int fault = 1; 
     
-    first_time = std::chrono::steady_clock::now();
-    first_time_error = first_time;
+    std::chrono::steady_clock::time_point first_time = std::chrono::steady_clock::now();
+    std::chrono::steady_clock::time_point first_time_error = first_time;
+
     while(fault != 0)
     {
         fault = tcp_socket->Connect(5000, error, error_code);
@@ -55,13 +57,12 @@ int DvlA50::connect(std::string addr, bool enable)
     if (!enable)
     {
         // Disable transducer operation to limit sensor heating out of water.
-        this->send_config_param("acoustic_enabled", false);
+        this->set("acoustic_enabled", false);
     }
     usleep(2000);
 
     return 0;
 }
-
 
 void DvlA50::disconnect()
 {
@@ -72,19 +73,15 @@ void DvlA50::disconnect()
     }
 }
 
-
-Response DvlA50::set_enabled(bool enabled)
+void DvlA50::send(const Message& msg)
 {
-    Response res = send_config_param("acoustic_enabled", enabled);
-    if (res.success)
-    {
-        this->enbaled = enabled;
-    }
-    return res;
+    std::string str = msg.dump();
+    char* c = &*str.begin();
+    std::lock_guard<std::mutex> lock(mtx);
+    tcp_socket->Send(c);
 }
 
-
-Response DvlA50::receive()
+DvlA50::Message DvlA50::receive()
 {
     // Single threaded access only
     std::lock_guard<std::mutex> lock(mtx);
@@ -94,7 +91,7 @@ Response DvlA50::receive()
     
     if(fault != 0)
     {
-        return Response(ResponseType::Invalid, {"fault", itos(fault)});
+        return {"fault", std::to_string(fault)};
     }
     
     while(tempBuffer[0] != '\n')
@@ -104,95 +101,114 @@ Response DvlA50::receive()
             str = str + tempBuffer[0];
         }
     }
-    
+
+    delete tempBuffer;
+
     try
     {
-        json_data = json::parse(str);
-
-        if (json_data.contains("altitude"))
-        {
-            return Response(ResponseType::VelocityReport, json_data);
-        }
-        else if (json_data.contains("pitch"))
-        {
-            return Response(ResponseType::DeadReckoningReport, json_data);
-        }
-        else if (json_data.contains("response_to"))
-        {
-            if(json_data["response_to"] == "set_config"
-            || json_data["response_to"] == "calibrate_gyro"
-            || json_data["response_to"] == "reset_dead_reckoning")
-            {
-                return Response(ResponseType::CommandResponse, json_data);
-            }
-            else if(json_data["response_to"] == "get_config")
-            {
-                return Response(ResponseType::ConfigStatus, json_data);
-            }
-        }
+        return json::parse(str);
     }
     catch(std::exception& e)
     {
-        return Response(ResponseType::Invalid, {"error", std::string(e.what())});
+        return {"error", std::string(e.what())};
     }
 }
 
-
-Response DvlA50::ping()
+DvlA50::Message DvlA50::wait_for_response(std::function<bool(const Message&)> check, uint32_t timeout_ms)
 {
-    if (enabled)
+    using namespace std::chrono;
+
+    auto start = steady_clock::now();
+    auto end = start + std::chrono::milliseconds(timeout_ms);
+    Message res;
+
+    do
     {
-        set_enabled(false);
+        if (steady_clock::now() > end)
+        {
+            throw std::runtime_error("Expected response did not appear in time");
+        }
+
+        res = receive();
     }
-    return send_command("trigger_ping");
-}
-
-
-Response DvlA50::send_command(std::string cmd)
-{
-    std::cout << "send command '" << cmd << "'" << std::endl;
+    while (!check(res));
     
-    json json_data = {"command", cmd};
-    send_message(json_data);
-    return wait_for_response();
+    return res;
 }
 
 
-Response DvlA50::send_config(
+void DvlA50::configure(
     int speed_of_sound,
     bool acoustic_enabled,
-    bool dark_mode_enabled,
-    int mountig_rotation_offset,
+    bool led_enabled,
+    int mounting_rotation_offset,
     std::string range_mode)
 {
-    json message;
+    DvlA50::Message message;
     message["command"] = "set_config";
     message["parameters"]["speed_of_sound"] = speed_of_sound;
     message["parameters"]["acoustic_enabled"] = acoustic_enabled;
-    message["parameters"]["dark_mode_enabled"] = dark_mode_enabled;
-    message["parameters"]["mountig_rotation_offset"] = mountig_rotation_offset;
+    message["parameters"]["dark_mode_enabled"] = led_enabled;
+    message["parameters"]["mounting_rotation_offset"] = mounting_rotation_offset;
     message["parameters"]["range_mode"] = range_mode;
 
-    send_message(message);
-    return wait_for_response();
+    send(message);
+}
+
+void DvlA50::set_speed_of_sound(int speed_of_sound)
+{
+    set("speed_of_sound", speed_of_sound);
+}
+
+void DvlA50::set_acoustic_enabled(bool enabled)
+{
+    set("acoustic_enabled", enabled);
+}
+
+void DvlA50::set_led_enabled(bool led_enabled)
+{
+    set("led_enabled", led_enabled);
+}
+
+void DvlA50::set_mounting_rotation_offset(int offset_degrees)
+{
+    set("mounting_rotation_offset", offset_degrees);
+}
+
+void DvlA50::set_range_mode(std::string range_mode)
+{
+    set("range_mode", range_mode);
 }
 
 
-void DvlA50::send_message(const json& msg)
+void DvlA50::send_command(std::string cmd)
 {
-    std::string str = msg.dump();
-    char* c = &*str.begin();
-    tcp_socket->Send(c);
+    std::cout << "send command '" << cmd << "'" << std::endl;
+
+    json json_data = {"command", cmd};
+    send(json_data);
 }
 
-
-Response DvlA50::wait_for_response(ResponseType type)
+void DvlA50::get_config()
 {
-    Response res;
-    do
+    send_command("get_config");
+}
+
+void DvlA50::calibrate_gyro()
+{
+    send_command("calibrate_gyro");
+}
+
+void DvlA50::reset_dead_reckoning()
+{
+    send_command("reset_dead_reckoning");
+}
+
+void DvlA50::trigger_ping()
+{
+    if (enabled)
     {
-        res = receive();
+        set_acoustic_enabled(false);
     }
-    while (res.type != type);
-    return res;
+    send_command("trigger_ping");
 }

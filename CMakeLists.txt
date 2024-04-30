@@ -19,7 +19,8 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(geometry_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
+find_package(nav_msgs REQUIRED)
 find_package(marine_acoustic_msgs REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(rclcpp_components REQUIRED)
@@ -53,8 +54,8 @@ ADD_EXECUTABLE(${PROJECT_NAME}_node
 ament_target_dependencies(${PROJECT_NAME}_node 
   rclcpp
   rclcpp_lifecycle
-  std_msgs
-  geometry_msgs
+  std_srvs
+  nav_msgs
   marine_acoustic_msgs
   tf2_geometry_msgs
 )
