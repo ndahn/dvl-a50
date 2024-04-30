@@ -19,7 +19,6 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(dvl_msgs REQUIRED)
 find_package(rclcpp_components REQUIRED)
@@ -27,59 +26,54 @@ find_package(rclcpp_lifecycle REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
 
 
-set(node_plugins "")
-
 include_directories(include
   ${rclcpp_INCLUDE_DIRS}
-  #${EIGEN3_INCLUDE_DIR} 
 )
-ament_python_install_package(scripts)
 
 
-# Talker Setup
-add_library(dvl_a50_component SHARED src/lifecycle_dvl_component.cpp)
-target_compile_definitions(dvl_a50_component PRIVATE "COMPOSITION_BUILDING_DLL")
-  
-ament_target_dependencies(dvl_a50_component
-  "rclcpp_components"
-  "lifecycle_msgs"
-  "rclcpp_lifecycle"
-  "std_msgs"
-  "dvl_msgs")
-  
-rclcpp_components_register_nodes(dvl_a50_component "composition::LifecycleDVL")
-set(node_plugins "${node_plugins}composition::LifecycleDVL;$<TARGET_FILE:dvl_a50_component>\n")
+# Library
+add_library(${PROJECT_NAME} SHARED src/dvl_a50.cpp)
+ament_export_targets(${PROJECT_NAME} HAS_LIBRARY_TARGET)
 
-
-
-add_executable(${PROJECT_NAME}_sensor src/dvl-sensor.cpp)
-ament_target_dependencies(${PROJECT_NAME}_sensor rclcpp 
-    "sensor_msgs" 
-    "geometry_msgs" 
-    "dvl_msgs")
-
-
-#Install C++ targets
-install(TARGETS
-  dvl_a50_component
-
-  ARCHIVE DESTINATION lib
+INSTALL(
+  TARGETS ${PROJECT_NAME}
+  EXPORT ${PROJECT_NAME}
   LIBRARY DESTINATION lib
-  RUNTIME DESTINATION bin)
-  
-install(TARGETS
-  ${PROJECT_NAME}_sensor
-  DESTINATION lib/${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
+  RUNTIME DESTINATION bin
+  INCLUDES DESTINATION include
 )
 
-#Install Python scripts
-#file(GLOB SCRIPT_FILES scripts/*)
-install(PROGRAMS
-  scripts/dvl_a50.py
-  DESTINATION lib/${PROJECT_NAME}
+
+# ROS2 Node
+ADD_EXECUTABLE(${PROJECT_NAME}_node 
+    src/dvl_a50_ros2.cpp
+)
+ament_target_dependencies(${PROJECT_NAME}_node 
+  rclcpp
+  rclcpp_lifecycle
+  std_msgs
+  geometry_msgs
+  dvl_msgs
+)
+# Link node to library compiled above and install it in the correct location
+TARGET_LINK_LIBRARIES(${PROJECT_NAME}_node ${PROJECT_NAME})
+INSTALL(TARGETS
+  ${PROJECT_NAME}_node
+  DESTINATION lib/${PROJECT_NAME}/
 )
 
-#Install Launch file
-install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
+
+# Launch and config files
+install(DIRECTORY
+  launch
+  DESTINATION share/${PROJECT_NAME}/
+)
+
+install(DIRECTORY
+  config
+  DESTINATION share/${PROJECT_NAME}
+)
+
 
 ament_package()

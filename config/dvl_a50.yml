@@ -1,0 +1,10 @@
+sensors:
+  dvl_a50:
+    ros__parameters:
+      ip_address: "192.168.194.95"
+      frame: "dvl_a50_link"
+      rate: 15.0
+      speed_of_sound: 1500
+      enable_led: true
+      mountig_rotation_offset: 0
+      range_mode: "auto"
