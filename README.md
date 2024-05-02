@@ -15,6 +15,30 @@ I based my version on [paagutie/dvl-a50](https://github.com/paagutie/dvl-a50), b
 - [JSON for Modern C++](https://github.com/nlohmann/json) (submodule, see `include/dvl_a50/json/`)
 
 
+# Basic Use
+To start the driver with the default configuration (see below), find out the IP address of the DVL and then run:
+```bash
+$ ros2 run dvl_a50 dvl_a50_node --ros-args -p ip_address:='192.168.194.95'
+```
+
+This method will require you to manually transition to its active state. To do this, execute the following in a separate terminal:
+```bash
+$ ros2 lifecycle set dvl_a50 configure
+$ ros2 lifecycle set dvl_a50 activate
+```
+
+Finally, the driver will disable automatic pinging by default to prevent overheating when out of water. Use either of the following service calls to start receiving pings. Reports will be published as per the topics defined further down.
+```bash
+# Request a single ping
+$ ros2 service call dvl_a50/trigger_ping
+```
+
+```bash
+# Automatic pinging
+$ ros2 service call dvl_a50/enable
+```
+
+
 # Topics & Services
 Data from the DVL is published on the following topics:
 - `dvl/velocity`: _marine_acoustic_msgs/Dvl_
@@ -39,7 +63,7 @@ When using the default launch file, the configuration will be loaded from `confi
 - `ip_address`: IP address of the DVL. *string, **Required***.
 - `frame`: The DVL's measuring and publishing frame. *string, default=dvl_a50_link*.
 - `rate`: Rate at which to handle messages. Even though the DVL-A50 takes velocity measurements at <=15Hz it is good to set a higher rate here so that additional messages can be handled as well (e.g. dead reckoning reports, command responses). *double, default=30.0*.
-- `enable_on_activate`: Enable automatic pinging when the lifecycle node is activated. *boolean, default=true*.
+- `enable_on_activate`: Enable automatic pinging when the lifecycle node is activated. *boolean, default=false*.
 - `speed_of_sound`: The speed of sound the DVL should assume (m/s). *int, default=1500*.
 - `enable_led`: Whether the LED on the side of the DVL should be enabled. *boolean, default=true*.
 - `mounting_rotation_offset`: Clockwise rotation of the DVL in degrees relative to the vehicle frame. *int, default=0*.

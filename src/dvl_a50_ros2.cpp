@@ -32,7 +32,7 @@ public:
         this->declare_parameter<std::string>("ip_address", "192.168.194.95");
         this->declare_parameter<std::string>("frame", "dvl_a50_link");
         this->declare_parameter<double>("rate", 30.0);
-        this->declare_parameter<bool>("enable_on_activate", true);
+        this->declare_parameter<bool>("enable_on_activate", false);
         this->declare_parameter<int>("speed_of_sound", 1500);
         this->declare_parameter<bool>("enable_led", true);
         this->declare_parameter<int>("mountig_rotation_offset", 0);
