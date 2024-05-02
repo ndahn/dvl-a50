@@ -32,8 +32,8 @@ public:
         this->declare_parameter<std::string>("ip_address", "192.168.194.95");
         this->declare_parameter<std::string>("frame", "dvl_a50_link");
         this->declare_parameter<double>("rate", 30.0);
-        this->declare_parameter<int>("speed_of_sound", 1500);
         this->declare_parameter<bool>("enable_on_activate", true);
+        this->declare_parameter<int>("speed_of_sound", 1500);
         this->declare_parameter<bool>("enable_led", true);
         this->declare_parameter<int>("mountig_rotation_offset", 0);
         this->declare_parameter<std::string>("range_mode", "auto");
@@ -84,8 +84,8 @@ public:
         }
 
         // Configure
-        speed_of_sound = this->get_parameter("speed_of_sound").as_int();
         enable_on_activate = this->get_parameter("enable_on_activate").as_bool();
+        speed_of_sound = this->get_parameter("speed_of_sound").as_int();
         bool led_enabled = this->get_parameter("led_enabled").as_bool();
         int mountig_rotation_offset = this->get_parameter("mountig_rotation_offset").as_int();
         std::string range_mode = this->get_parameter("range_mode").as_string();
