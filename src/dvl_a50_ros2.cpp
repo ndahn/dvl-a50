@@ -198,16 +198,11 @@ public:
             // Always print the result
             if (res["success"])
             {
-                RCLCPP_INFO(get_logger(), "%s: success", trigger.c_str());
+                RCLCPP_INFO(get_logger(), "%s success: %s", trigger.c_str(), res["result"].dump().c_str());
             }
             else
             {
                 RCLCPP_ERROR(get_logger(), "%s failed: %s", trigger.c_str(), res["error_message"].dump().c_str());
-            }
-
-            if (trigger == "get_config")
-            {
-                RCLCPP_INFO(get_logger(), "get_config: %s", res["result"].dump().c_str());
             }
 
             // Check if we have a pending service call for this command and release it
