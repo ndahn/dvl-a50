@@ -3,7 +3,7 @@ This is a ROS2 driver for the [WaterLinked DVL-A50](https://store.waterlinked.co
 
 I based my version on [paagutie/dvl-a50](https://github.com/paagutie/dvl-a50), but more or less rewrote the entire driver and node, implementing the following features:
 
-- Driver compiles as a ROS-independent shared library
+- Driver itself is ROS independent and can be used as a shared library
 - Proper lifecycle node
 - Using [marine_acoustic_msgs](https://github.com/apl-ocean-engineering/marine_msgs/tree/ros2/marine_acoustic_msgs) and standard messages instead of custom message types
 - Provides services for documented commands
@@ -36,10 +36,10 @@ Furthermore, the node will provide the following services. All services use `std
 
 # Configuration
 When using the default launch file, the configuration will be loaded from `config/dvl_a50.yml`. In general, the following parameters are recognized:
-- _ip_address_: IP address of the DVL. **Required**.
-- _frame_: The DVL's measuring and publishing frame. Default is `dvl_a50`.
-- _rate_: Rate at which to handle messages. Even though the DVL-A50 takes velocity measurements at <=15Hz it is good to set a higher rate here so that additional messages can be handled as well (e.g. dead reckoning reports, command responses). Default is `30.0`.
-- _speed_of_sound_: The speed of sound to assume (m/s). Default is `1500`.
-- _enable_led_: Whether the LED on the side of the DVL should be enabled. Default is `true`.
-- _mountig_rotation_offset_: Rotation of the DVL in degrees relative to the vehicle frame. Default is `0`.
-- _range_mode_: See [range mode configuration](https://waterlinked.github.io/dvl/dvl-protocol/#range-mode-configuration). Default is `auto`.
+- _ip_address_: IP address of the DVL. _string_, **Required**.
+- _frame_: The DVL's measuring and publishing frame. _string_, default=`dvl_a50_link`.
+- _rate_: Rate at which to handle messages. Even though the DVL-A50 takes velocity measurements at <=15Hz it is good to set a higher rate here so that additional messages can be handled as well (e.g. dead reckoning reports, command responses). _double_, default=`30.0`.
+- _speed_of_sound_: The speed of sound to assume (m/s). _int_, default=`1500`.
+- _enable_led_: Whether the LED on the side of the DVL should be enabled. _boolean_, default=`true`.
+- _mounting_rotation_offset_: Rotation of the DVL in degrees relative to the vehicle frame. _int_, default=`0`.
+- _range_mode_: See [range mode configuration](https://waterlinked.github.io/dvl/dvl-protocol/#range-mode-configuration). _string_, default=`auto`.
