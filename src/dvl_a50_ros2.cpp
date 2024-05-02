@@ -110,11 +110,8 @@ public:
     {
         LifecycleNode::on_activate(state);
 
-        if (enable_on_activate)
-        {
-            dvl.set_acoustic_enabled(true);
-        }
-
+        dvl.set_acoustic_enabled(enable_on_activate);
+        
         velocity_pub->on_activate();
         dead_reckoning_pub->on_activate();
         odometry_pub->on_activate();

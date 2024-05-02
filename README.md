@@ -45,7 +45,7 @@ Data from the DVL is published on the following topics:
 - `dvl/dead_reckoning`: _geometry_msgs/PoseWithCovarianceStamped_
 - `dvl/odometry`: _nav_msgs/Odometry_
 
-The velocity report also fills in the `beam_quality` array of the `Dvl` message using the Received Signal Strength Indicator (RSSI) reported for each beam. The values are in dBm and thus negative. Going counterclockwise from the cable, the beam pads' indices are `1, 2, 3, 0`. See also the [official documentation](https://waterlinked.github.io/dvl/dvl-a50/).
+The velocity report also fills in the `beam_quality` array of the `Dvl` message using the Received Signal Strength Indicator (RSSI) reported for each beam. The values are in dBm and thus negative. Going counterclockwise from the cable, the transducers' indices are `1, 2, 3, 0`. See also the [official documentation](https://waterlinked.github.io/dvl/dvl-a50/).
 
 Since the DVL-A50 reports the velocity and dead reckoning at different frequencies, the odometry is published every time either of them is received, with only the `pose` or `twist` updated respectively.
 
