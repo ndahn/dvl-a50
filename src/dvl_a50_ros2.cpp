@@ -71,8 +71,8 @@ public:
     CallbackReturn on_configure(const rclcpp_lifecycle::State& state)
     {
         // Parameters
-        ip_address = this->get_parameter("ip_address").as_string();
-        frame = this->get_parameter("frame").as_string();
+        std::string ip_address = this->get_parameter("ip_address").as_string();
+        std::string frame = this->get_parameter("frame").as_string();
         rate = this->get_parameter("rate").as_double();
         RCLCPP_INFO(get_logger(), "Connecting to DVL A50 at %s", ip_address.c_str());
 
@@ -355,7 +355,6 @@ public:
 private:
     DvlA50 dvl;
 
-    std::string ip_address;
     double rate;
     bool enable_on_activate;
 
