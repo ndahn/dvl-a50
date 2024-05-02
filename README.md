@@ -23,8 +23,8 @@ $ ros2 run dvl_a50 dvl_a50_node --ros-args -p ip_address:='192.168.194.95'
 
 This method will require you to manually transition to its active state. To do this, execute the following in a separate terminal:
 ```bash
-$ ros2 lifecycle set dvl_a50 configure
-$ ros2 lifecycle set dvl_a50 activate
+$ ros2 lifecycle set /dvl_a50 configure
+$ ros2 lifecycle set /dvl_a50 activate
 ```
 
 Finally, the driver will disable automatic pinging by default to prevent overheating when out of water. Use either of the following service calls to start receiving pings. Reports will be published as per the topics defined further down.
