@@ -20,6 +20,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_srvs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(marine_acoustic_msgs REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
@@ -55,6 +56,7 @@ ament_target_dependencies(${PROJECT_NAME}_node
   rclcpp
   rclcpp_lifecycle
   std_srvs
+  geometry_msgs
   nav_msgs
   marine_acoustic_msgs
   tf2_geometry_msgs

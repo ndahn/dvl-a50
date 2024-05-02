@@ -1,13 +1,13 @@
 # About
 This is a ROS2 driver for the [WaterLinked DVL-A50](https://store.waterlinked.com/product/dvl-a50/). Although there are a couple of other ROS2 drivers out there, I found that all of them either were very basic (e.g. no configuration, no service calls), had bugs or did not work at all. 
 
-I based my version on [paagutie/dvl-a50](paagutie/dvl-a50), but more or less rewrote the entire driver and node, implementing the following features:
+I based my version on [paagutie/dvl-a50](https://github.com/paagutie/dvl-a50), but more or less rewrote the entire driver and node, implementing the following features:
 
 - Driver compiles as a ROS-independent shared library
 - Proper lifecycle node
-- Using [marine_acoustic_msgs](https://github.com/apl-ocean-engineering/marine_msgs/tree/ros2/marine_acoustic_msgs) instead of custom message types
+- Using [marine_acoustic_msgs](https://github.com/apl-ocean-engineering/marine_msgs/tree/ros2/marine_acoustic_msgs) and standard messages instead of custom message types
 - Provides services for documented commands
-- Allows to configure DVL on startup
+- Allows configuration of DVL on startup
 
 
 # Dependencies
@@ -17,12 +17,13 @@ I based my version on [paagutie/dvl-a50](paagutie/dvl-a50), but more or less rew
 
 # Topics & Services
 Data from the DVL is published on the following topics:
-- _dvl/odometry_ - `nav_msgs/Odometry`
 - _dvl/velocity_ - `marine_acoustic_msgs/Dvl`
+- _dvl/dead_reckoning_ - `geometry_msgs/PoseWithCovarianceStamped`
+- _dvl/odometry_ - `nav_msgs/Odometry`
 
-The velocity report also fills in the `beam_quality` array using the Received Signal Strength Indicator (RSSI) reported for each beam. The valids are in dBm and thus negative. Going counterclockwise from the cable, the beam pads' indices are `1, 2, 3, 0`. See also the [official documentation](https://waterlinked.github.io/dvl/dvl-a50/).
+The velocity report also fills in the `beam_quality` array of the _Dvl_ message using the Received Signal Strength Indicator (RSSI) reported for each beam. The valids are in dBm and thus negative. Going counterclockwise from the cable, the beam pads' indices are `1, 2, 3, 0`. See also the [official documentation](https://waterlinked.github.io/dvl/dvl-a50/).
 
-![](https://waterlinked.github.io/img/WL-21035-3_DVL-A50_Front_1600_transducers_crop.jpg)
+Since the DVL-A50 reports the velocity and dead reckoning at different frequencies, the odometry is published every time either of them is received, with only the `pose` or `twist` updated respectively.
 
 Furthermore, the node will provide the following services. All services use `std_msgs/Trigger`, i.e. they don't take any parameters and return a success state and error message.
 - _enable_: Enable automatic pinging. The DVL will turn off when it's close to overheating, but this should still only be done when it is submerged.

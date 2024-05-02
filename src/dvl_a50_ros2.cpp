@@ -12,6 +12,7 @@
 #include <rclcpp_lifecycle/lifecycle_publisher.hpp>
 
 #include <std_srvs/srv/trigger.hpp>
+#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <marine_acoustic_msgs/msg/dvl.hpp>
@@ -36,6 +37,32 @@ public:
         this->declare_parameter<bool>("enable_led", true);
         this->declare_parameter<int>("mountig_rotation_offset", 0);
         this->declare_parameter<std::string>("range_mode", "auto");
+
+        // Some information won't change, so we can fill it in here. 
+        velocity_report.velocity_mode = marine_acoustic_msgs::msg::Dvl::DVL_MODE_BOTTOM;
+        velocity_report.dvl_type = marine_acoustic_msgs::msg::Dvl::DVL_TYPE_PISTON;
+
+        // Each beam points 22.5° away from the center, LED pointing forward. 
+        // Transducers are rotated 45° around Z.
+        // Beam 1 (+135° from X)
+        velocity_report.beam_unit_vec[0].x = -0.6532814824381883;
+        velocity_report.beam_unit_vec[0].y =  0.6532814824381883;
+        velocity_report.beam_unit_vec[0].z =  0.38268343236508984;
+
+        // Beam 2 (-135° from X)
+        velocity_report.beam_unit_vec[1].x = -0.6532814824381883;
+        velocity_report.beam_unit_vec[1].y = -0.6532814824381883;
+        velocity_report.beam_unit_vec[1].z =  0.38268343236508984;
+
+        // Beam 3 (-45° from X)
+        velocity_report.beam_unit_vec[2].x =  0.6532814824381883;
+        velocity_report.beam_unit_vec[2].y = -0.6532814824381883;
+        velocity_report.beam_unit_vec[2].z =  0.38268343236508984;
+
+        // Beam 4 (+45° from X)
+        velocity_report.beam_unit_vec[3].x =  0.6532814824381883;
+        velocity_report.beam_unit_vec[3].y =  0.6532814824381883;
+        velocity_report.beam_unit_vec[3].z =  0.38268343236508984;
     }
 
     ~DvlA50Node()
@@ -67,7 +94,8 @@ public:
         
          //Publishers
         velocity_pub = this->create_publisher<marine_acoustic_msgs::msg::Dvl>("dvl/velocity", 10);
-        odom_pub = this->create_publisher<nav_msgs::msg::Odometry>("dvl/position", 10);
+        dead_reckoning_pub = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("dvl/dead_reckoning", 10);
+        odometry_pub = this->create_publisher<nav_msgs::msg::Odometry>("dvl/odometry", 10);
 
         return CallbackReturn::SUCCESS;
     }
@@ -82,7 +110,8 @@ public:
         }
 
         velocity_pub->on_activate();
-        odom_pub->on_activate();
+        dead_reckoning_pub->on_activate();
+        odometry_pub->on_activate();
         
         // Services
         enable_srv = this->create_service<std_srvs::srv::Trigger>(
@@ -129,7 +158,8 @@ public:
         timer->cancel();
 
         velocity_pub->on_deactivate();
-        odom_pub->on_deactivate();
+        dead_reckoning_pub->on_deactivate();
+        odometry_pub->on_deactivate();
 
         return CallbackReturn::SUCCESS;
     }
@@ -140,7 +170,8 @@ public:
         timer.reset();
 
         velocity_pub.reset();
-        odom_pub.reset();
+        dead_reckoning_pub.reset();
+        odometry_pub.reset();
 
         get_config_srv.reset();
         calibrate_gyro_srv.reset();
@@ -190,99 +221,91 @@ public:
         else if(res.contains("altitude"))
         {
             // Velocity report
-            marine_acoustic_msgs::msg::Dvl msg;
-            
-            msg.header.frame_id = frame;
-            msg.header.stamp = rclcpp::Time(uint64_t(res["time_of_validity"]) * 1000);
+            velocity_report.header.frame_id = frame;
+            velocity_report.header.stamp = rclcpp::Time(uint64_t(res["time_of_validity"]) * 1000);
 
-            msg.velocity_mode = marine_acoustic_msgs::msg::Dvl::DVL_MODE_BOTTOM;
-            msg.dvl_type = marine_acoustic_msgs::msg::Dvl::DVL_TYPE_PISTON;
-            
-            msg.velocity.x = double(res["vx"]);
-            msg.velocity.y = double(res["vy"]);
-            msg.velocity.z = double(res["vz"]);
+            velocity_report.velocity.x = double(res["vx"]);
+            velocity_report.velocity.y = double(res["vy"]);
+            velocity_report.velocity.z = double(res["vz"]);
             
             for (size_t i = 0; i < 3; i++)
             {
                 for (size_t j = 0; j < 3; j++)
                 {
                     double val = double(res["covariance"][i][j]);
-                    msg.velocity_covar[i*3 + j] = val;
+                    velocity_report.velocity_covar[i*3 + j] = val;
                 }
             }
 
             double current_altitude = double(res["altitude"]);
             if(current_altitude >= 0.0 && res["velocity_valid"])
-                old_altitude = msg.altitude = current_altitude;
-            else
-                msg.altitude = old_altitude;
+            {
+                velocity_report.altitude = current_altitude;
+            }
 
-            msg.course_gnd = std::atan2(msg.velocity.y, msg.velocity.x);
-            msg.speed_gnd = std::sqrt(msg.velocity.x * msg.velocity.x + msg.velocity.y * msg.velocity.y);
+            velocity_report.course_gnd = std::atan2(velocity_report.velocity.y, velocity_report.velocity.x);
+            velocity_report.speed_gnd = std::sqrt(velocity_report.velocity.x * velocity_report.velocity.x + velocity_report.velocity.y * velocity_report.velocity.y);
 
-            msg.sound_speed = speed_of_sound;
-            msg.beam_ranges_valid = true;
-            msg.beam_velocities_valid = res["velocity_valid"];
+            velocity_report.sound_speed = speed_of_sound;
+            velocity_report.beam_ranges_valid = true;
+            velocity_report.beam_velocities_valid = res["velocity_valid"];
 
             // Beam specific data
             for (size_t beam = 0; beam < 4; beam++)
             {
-                msg.num_good_beams += bool(res["transducers"][beam]["beam_valid"]);
-                msg.range = res["transducers"][beam]["distance"];
-                //msg.range_covar
-                msg.beam_quality = res["transducers"][beam]["rssi"];
-                msg.beam_velocity = res["transducers"][beam]["velocity"];
-                //msg.beam_velocity_covar
+                velocity_report.num_good_beams += bool(res["transducers"][beam]["beam_valid"]);
+                velocity_report.range = res["transducers"][beam]["distance"];
+                //velocity_report.range_covar
+                velocity_report.beam_quality = res["transducers"][beam]["rssi"];
+                velocity_report.beam_velocity = res["transducers"][beam]["velocity"];
+                //velocity_report.beam_velocity_covar
             }
 
-            /*
-             * Beams point 22.5° away from center, LED pointing forward
-             * Transducers rotated 45° around Z
-             */
-            // Beam 1 (+135° from X)
-            msg.beam_unit_vec[0].x = -0.6532814824381883;
-            msg.beam_unit_vec[0].y =  0.6532814824381883;
-            msg.beam_unit_vec[0].z =  0.38268343236508984;
+            velocity_pub->publish(velocity_report);
 
-            // Beam 2 (-135° from X)
-            msg.beam_unit_vec[1].x = -0.6532814824381883;
-            msg.beam_unit_vec[1].y = -0.6532814824381883;
-            msg.beam_unit_vec[1].z =  0.38268343236508984;
+            // Update the twist of the odometry
+            odometry.header.stamp = velocity_report.header.stamp;
+            odometry.twist.twist.linear.x = velocity_report.velocity.x;
+            odometry.twist.twist.linear.y = velocity_report.velocity.y;
+            odometry.twist.twist.linear.z = velocity_report.velocity.z;
 
-            // Beam 3 (-45° from X)
-            msg.beam_unit_vec[2].x =  0.6532814824381883;
-            msg.beam_unit_vec[2].y = -0.6532814824381883;
-            msg.beam_unit_vec[2].z =  0.38268343236508984;
-
-            // Beam 4 (+45° from X)
-            msg.beam_unit_vec[3].x =  0.6532814824381883;
-            msg.beam_unit_vec[3].y =  0.6532814824381883;
-            msg.beam_unit_vec[3].z =  0.38268343236508984;
-
-            velocity_pub->publish(msg);
+            // Fill in the top left 3x3 of the 6x6 twist covariance matrix.
+            // Could do this further up, but I prefer the clean separation over saving two tiny for loops.
+            for (size_t i = 0; i < 3; i++)
+            {
+                for (size_t j = 0; j < 3; j++)
+                {
+                    odometry.twist.covariance[i * 3 + j] = velocity_report.velocity_covar[i * 6 + j];
+                }
+            }
+            
+            odometry_pub->publish(odometry);
         }
         else if (res.contains("pitch"))
         {
             // Dead reckoning report
-            nav_msgs::msg::Odometry msg;
-            
-            msg.header.frame_id = frame;
-            msg.header.stamp = rclcpp::Time(static_cast<uint64_t>(double(res["ts"])) * 1e9);
+            dead_reckoning_report.header.frame_id = frame;
+            dead_reckoning_report.header.stamp = rclcpp::Time(static_cast<uint64_t>(double(res["ts"])) * 1e9);
 
-            msg.pose.pose.position.x = double(res["x"]);
-            msg.pose.pose.position.y = double(res["y"]);
-            msg.pose.pose.position.z = double(res["z"]);
+            dead_reckoning_report.pose.pose.position.x = double(res["x"]);
+            dead_reckoning_report.pose.pose.position.y = double(res["y"]);
+            dead_reckoning_report.pose.pose.position.z = double(res["z"]);
 
             double std_dev = double(res["std"]);
-            msg.pose.covariance[0] = std_dev;
-            msg.pose.covariance[7] = std_dev;
-            msg.pose.covariance[14] = std_dev;
+            dead_reckoning_report.pose.covariance[0] = std_dev;
+            dead_reckoning_report.pose.covariance[7] = std_dev;
+            dead_reckoning_report.pose.covariance[14] = std_dev;
 
             tf2::Quaternion quat;
             quat.setRPY(double(res["roll"]), double(res["pitch"]), double(res["yaw"]));
-            msg.pose.pose.orientation = tf2::toMsg(quat);
+            dead_reckoning_report.pose.pose.orientation = tf2::toMsg(quat);
 
-            odom_pub->publish(msg);
+            dead_reckoning_pub->publish(dead_reckoning_report);
+
+            // Update the pose of the odometry
+            odometry.header.stamp = dead_reckoning_report.header.stamp;
+            odometry.pose = dead_reckoning_report.pose;            
+            odometry_pub->publish(odometry);
         }
         else
         {
@@ -339,14 +362,18 @@ private:
     double rate;
     int speed_of_sound;
     bool enable_on_activate;
-    double old_altitude;
+
+    marine_acoustic_msgs::msg::Dvl velocity_report;
+    geometry_msgs::msg::PoseWithCovarianceStamped dead_reckoning_report;
+    nav_msgs::msg::Odometry odometry;
 
     // Promises of unfulfilled service calls; assumes that no service is called twice in parallel
     std::map<std::string, std::promise<DvlA50::Message>> pending_service_calls;
     
     rclcpp::TimerBase::SharedPtr timer;
     rclcpp_lifecycle::LifecyclePublisher<marine_acoustic_msgs::msg::Dvl>::SharedPtr velocity_pub;
-    rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub;
+    rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr dead_reckoning_pub;
+    rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Odometry>::SharedPtr odometry_pub;
 
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr enable_srv;
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr disable_srv;
