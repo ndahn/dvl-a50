@@ -63,7 +63,7 @@ When using the default launch file, the configuration will be loaded from `confi
 - `ip_address`: IP address of the DVL. *string, **Required***.
 - `frame`: The DVL's measuring and publishing frame. *string, default=dvl_a50_link*.
 - `rate`: Rate at which to handle messages. Even though the DVL-A50 takes velocity measurements at <=15Hz it is good to set a higher rate here so that additional messages can be handled as well (e.g. dead reckoning reports, command responses). *double, default=30.0*.
-- `enable_on_activate`: Enable automatic pinging when the lifecycle node is activated. *boolean, default=false*.
+- `enable_on_activate`: Enable automatic pinging when the lifecycle node is activated. Automatic pinging will *always* be disabled when the driver is deactivated. *boolean, default=false*.
 - `speed_of_sound`: The speed of sound the DVL should assume (m/s). *int, default=1500*.
 - `enable_led`: Whether the LED on the side of the DVL should be enabled. *boolean, default=true*.
 - `mounting_rotation_offset`: Clockwise rotation of the DVL in degrees relative to the vehicle frame. *int, default=0*.
