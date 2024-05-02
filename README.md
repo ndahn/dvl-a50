@@ -17,30 +17,30 @@ I based my version on [paagutie/dvl-a50](https://github.com/paagutie/dvl-a50), b
 
 # Topics & Services
 Data from the DVL is published on the following topics:
-- **dvl/velocity:** - `marine_acoustic_msgs/Dvl`
-- **dvl/dead_reckoning:** - `geometry_msgs/PoseWithCovarianceStamped`
-- **dvl/odometry:** - `nav_msgs/Odometry`
+- `dvl/velocity`: _marine_acoustic_msgs/Dvl_
+- `dvl/dead_reckoning`: _geometry_msgs/PoseWithCovarianceStamped_
+- `dvl/odometry`: _nav_msgs/Odometry_
 
 The velocity report also fills in the `beam_quality` array of the `Dvl` message using the Received Signal Strength Indicator (RSSI) reported for each beam. The values are in dBm and thus negative. Going counterclockwise from the cable, the beam pads' indices are `1, 2, 3, 0`. See also the [official documentation](https://waterlinked.github.io/dvl/dvl-a50/).
 
 Since the DVL-A50 reports the velocity and dead reckoning at different frequencies, the odometry is published every time either of them is received, with only the `pose` or `twist` updated respectively.
 
 Furthermore, the node will provide the following services. All services use `std_msgs/Trigger`, i.e. they don't take any parameters and return a success state and error/result message.
-- **enable:** Enable automatic pinging. The DVL will turn off when it's close to overheating, but this should still only be done when it is submerged. Also note the `enable_on_activate` parameter.
-- **disable:** Disable automatic pinging.
-- **get_config:** Return the DVL's configuration. If successful, the result will be encoded as json in the `message` field.
-- **calibrate_gyro:** Trigger calibration of the gyro.
-- **reset_dead_reckoning:** Reset the dead reckoning position estimator.
-- **trigger_ping:** Trigger a single ping. This will disable automatic pinging.
+- `enable`: Enable automatic pinging. The DVL will turn off when it's close to overheating, but this should still only be done when it is submerged. Also note the `enable_on_activate` parameter.
+- `disable`: Disable automatic pinging.
+- `get_config`: Return the DVL's configuration. If successful, the result will be encoded as json in the `message` field.
+- `calibrate_gyro`: Trigger calibration of the gyro.
+- `reset_dead_reckoning`: Reset the dead reckoning position estimator.
+- `trigger_ping`: Trigger a single ping. This will disable automatic pinging.
 
 
 # Configuration
 When using the default launch file, the configuration will be loaded from `config/dvl_a50.yml`. In general, the following parameters are recognized:
-- **ip_address:** IP address of the DVL. _string_, **Required**.
-- **frame:** The DVL's measuring and publishing frame. _string_, default=`dvl_a50_link`.
-- **rate:** Rate at which to handle messages. Even though the DVL-A50 takes velocity measurements at <=15Hz it is good to set a higher rate here so that additional messages can be handled as well (e.g. dead reckoning reports, command responses). _double_, default=`30.0`.
-- **enable_on_activate:** Enable automatic pinging when the lifecycle node is activated. _boolean_, default=`true`.
-- **speed_of_sound:** The speed of sound the DVL should assume (m/s). _int_, default=`1500`.
-- **enable_led:** Whether the LED on the side of the DVL should be enabled. _boolean_, default=`true`.
-- **mounting_rotation_offset:** Clockwise rotation of the DVL in degrees relative to the vehicle frame. _int_, default=`0`.
-- **range_mode:** See [range mode configuration](https://waterlinked.github.io/dvl/dvl-protocol/#range-mode-configuration). _string_, default=`auto`.
+- `ip_address`: IP address of the DVL. *string, **Required***.
+- `frame`: The DVL's measuring and publishing frame. *string, default=dvl_a50_link*.
+- `rate`: Rate at which to handle messages. Even though the DVL-A50 takes velocity measurements at <=15Hz it is good to set a higher rate here so that additional messages can be handled as well (e.g. dead reckoning reports, command responses). *double, default=30.0*.
+- `enable_on_activate`: Enable automatic pinging when the lifecycle node is activated. *boolean, default=true*.
+- `speed_of_sound`: The speed of sound the DVL should assume (m/s). *int, default=1500*.
+- `enable_led`: Whether the LED on the side of the DVL should be enabled. *boolean, default=true*.
+- `mounting_rotation_offset`: Clockwise rotation of the DVL in degrees relative to the vehicle frame. *int, default=0*.
+- `range_mode`: See [range mode configuration](https://waterlinked.github.io/dvl/dvl-protocol/#range-mode-configuration). *string, default=auto*.
