@@ -85,14 +85,20 @@ public:
 
         // Configure
         enable_on_activate = this->get_parameter("enable_on_activate").as_bool();
-        speed_of_sound = this->get_parameter("speed_of_sound").as_int();
+        int speed_of_sound = this->get_parameter("speed_of_sound").as_int();
         bool led_enabled = this->get_parameter("led_enabled").as_bool();
         int mountig_rotation_offset = this->get_parameter("mountig_rotation_offset").as_int();
         std::string range_mode = this->get_parameter("range_mode").as_string();
         
         dvl.configure(speed_of_sound, false, led_enabled, mountig_rotation_offset, range_mode);
         
-         //Publishers
+        // Set some values from parameters that won't change
+        velocity_report.sound_speed = speed_of_sound;
+        velocity_report.header.frame_id = frame;
+        dead_reckoning_report.header.frame_id = frame;
+        odometry.header.frame_id = frame;
+        
+        // Publishers
         velocity_pub = this->create_publisher<marine_acoustic_msgs::msg::Dvl>("dvl/velocity", 10);
         dead_reckoning_pub = this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("dvl/dead_reckoning", 10);
         odometry_pub = this->create_publisher<nav_msgs::msg::Odometry>("dvl/odometry", 10);
@@ -216,7 +222,6 @@ public:
         else if(res.contains("altitude"))
         {
             // Velocity report
-            velocity_report.header.frame_id = frame;
             velocity_report.header.stamp = rclcpp::Time(uint64_t(res["time_of_validity"]) * 1000);
 
             velocity_report.velocity.x = double(res["vx"]);
@@ -241,7 +246,6 @@ public:
             velocity_report.course_gnd = std::atan2(velocity_report.velocity.y, velocity_report.velocity.x);
             velocity_report.speed_gnd = std::sqrt(velocity_report.velocity.x * velocity_report.velocity.x + velocity_report.velocity.y * velocity_report.velocity.y);
 
-            velocity_report.sound_speed = speed_of_sound;
             velocity_report.beam_ranges_valid = true;
             velocity_report.beam_velocities_valid = res["velocity_valid"];
 
@@ -279,7 +283,6 @@ public:
         else if (res.contains("pitch"))
         {
             // Dead reckoning report
-            dead_reckoning_report.header.frame_id = frame;
             dead_reckoning_report.header.stamp = rclcpp::Time(static_cast<uint64_t>(double(res["ts"])) * 1e9);
 
             dead_reckoning_report.pose.pose.position.x = double(res["x"]);
@@ -353,9 +356,7 @@ private:
     DvlA50 dvl;
 
     std::string ip_address;
-    std::string frame;
     double rate;
-    int speed_of_sound;
     bool enable_on_activate;
 
     marine_acoustic_msgs::msg::Dvl velocity_report;
