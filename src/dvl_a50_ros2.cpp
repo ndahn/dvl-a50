@@ -3,6 +3,8 @@
 #include <cstdlib>
 #include <iomanip>
 #include <cmath>
+#include <map>
+#include <future>
 
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp/publisher.hpp>
@@ -85,27 +87,27 @@ public:
         // Services
         enable_srv = this->create_service<std_srvs::srv::Trigger>(
             "enable", 
-            bind(&DvlA50Node::send_param<bool>, this, "acoustic_enabled", true, std::placeholders::_1, std::placeholders::_2));
+            bind(&DvlA50Node::srv_send_param<bool>, this, "acoustic_enabled", true, std::placeholders::_1, std::placeholders::_2));
 
         disable_srv = this->create_service<std_srvs::srv::Trigger>(
             "disable", 
-            bind(&DvlA50Node::send_param<bool>, this, "acoustic_enabled", false, std::placeholders::_1, std::placeholders::_2));
+            bind(&DvlA50Node::srv_send_param<bool>, this, "acoustic_enabled", false, std::placeholders::_1, std::placeholders::_2));
 
         get_config_srv = this->create_service<std_srvs::srv::Trigger>(
             "get_config", 
-            bind(&DvlA50Node::send_command, this, "get_config", std::placeholders::_1, std::placeholders::_2));
+            bind(&DvlA50Node::srv_send_command, this, "get_config", std::placeholders::_1, std::placeholders::_2));
 
         calibrate_gyro_srv = this->create_service<std_srvs::srv::Trigger>(
             "calibrate_gyro", 
-            bind(&DvlA50Node::send_command, this, "calibrate_gyro", std::placeholders::_1, std::placeholders::_2));
+            bind(&DvlA50Node::srv_send_command, this, "calibrate_gyro", std::placeholders::_1, std::placeholders::_2));
 
         reset_dead_reckoning_srv = this->create_service<std_srvs::srv::Trigger>(
             "reset_dead_reckoning", 
-            bind(&DvlA50Node::send_command, this, "reset_dead_reckoning", std::placeholders::_1, std::placeholders::_2));
+            bind(&DvlA50Node::srv_send_command, this, "reset_dead_reckoning", std::placeholders::_1, std::placeholders::_2));
 
         trigger_ping_srv = this->create_service<std_srvs::srv::Trigger>(
             "trigger_ping", 
-            bind(&DvlA50Node::send_command, this, "trigger_ping", std::placeholders::_1, std::placeholders::_2));
+            bind(&DvlA50Node::srv_send_command, this, "trigger_ping", std::placeholders::_1, std::placeholders::_2));
 
         // Start reading data
         RCLCPP_INFO(get_logger(), "Starting to receive reports at <= %f Hz", rate);
@@ -159,10 +161,10 @@ public:
 
         if (res.contains("response_to"))
         {
-            // TODO check if we have a pending service call for this command and release it
+            // Command response
             std::string trigger = res["response_to"];
 
-            // Command response
+            // Always print the result
             if (res["success"])
             {
                 RCLCPP_INFO(get_logger(), "%s: success", trigger.c_str());
@@ -175,6 +177,14 @@ public:
             if (trigger == "get_config")
             {
                 RCLCPP_INFO(get_logger(), "get_config: %s", res["result"].dump().c_str());
+            }
+
+            // Check if we have a pending service call for this command and release it
+            auto pending_it = pending_service_calls.find(trigger);
+            if (pending_it != pending_service_calls.end())
+            {
+                pending_it->second.set_value(res);
+                pending_service_calls.erase(pending_it);
             }
         }
         else if(res.contains("altitude"))
@@ -281,26 +291,34 @@ public:
     }
 
 
-    void send_command(
+    void srv_send_command(
         std::string command,
         std_srvs::srv::Trigger::Request::SharedPtr req,
         std_srvs::srv::Trigger::Response::SharedPtr res)
     {
-        // TODO create future and wait
-        DvlA50::Message json_data = dvl.send_command(command);
+        std::promise<DvlA50::Message> promise;
+        std::future<DvlA50::Message> future = promise.get_future();
+        pending_service_calls.insert(std::make_pair(command, std::move(promise)));
+        dvl.send_command(command);
+
+        DvlA50::Message json_data = future.get();
         res->success = json_data["success"];
         res->message = json_data["error_message"];
     }
 
     template<typename T>
-    void send_param(
+    void srv_send_param(
         std::string param,
         const T& value,
         std_srvs::srv::Trigger::Request::SharedPtr req,
         std_srvs::srv::Trigger::Response::SharedPtr res)
     {
-        // TODO create future and wait
-        DvlA50::Message json_data = dvl.set(param, value);
+        std::promise<DvlA50::Message> promise;
+        std::future<DvlA50::Message> future = promise.get_future();
+        pending_service_calls.insert(std::make_pair("set_config", std::move(promise)));
+        dvl.set(param, value);
+
+        DvlA50::Message json_data = future.get();
         res->success = json_data["success"];
         res->message = json_data["error_message"];
     }
@@ -315,6 +333,9 @@ private:
     int speed_of_sound;
     bool enable_on_activate;
     double old_altitude;
+
+    // Promises of unfulfilled service calls; assumes that no service is called twice in parallel
+    std::map<std::string, std::promise<DvlA50::Message>> pending_service_calls;
     
     rclcpp::TimerBase::SharedPtr timer;
     rclcpp_lifecycle::LifecyclePublisher<marine_acoustic_msgs::msg::Dvl>::SharedPtr velocity_pub;
@@ -338,7 +359,7 @@ int main(int argc, char * argv[])
 
     rclcpp::init(argc, argv);
     rclcpp::executors::SingleThreadedExecutor exe;
-    std::shared_ptr<DvlA50> node = std::make_shared<DvlA50>("dvl_a50");
+    std::shared_ptr<DvlA50Node> node = std::make_shared<DvlA50Node>("dvl_a50");
     exe.add_node(node->get_node_base_interface());
     exe.spin();
     rclcpp::shutdown();
