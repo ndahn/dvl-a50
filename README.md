@@ -1,5 +1,5 @@
 # About
-This is a ROS2 driver for the [WaterLinked DVL-A50](https://store.waterlinked.com/product/dvl-a50/). Although there are a couple of other ROS2 drivers out there, I found that all of them either were very basic (e.g. no configuration, no service calls), had bugs or did not work at all. 
+A better ROS2 driver for the [WaterLinked DVL-A50](https://store.waterlinked.com/product/dvl-a50/). Although there are a couple of other ROS2 drivers out there, I found that all of them either were very basic (e.g. no configuration, no service calls), had bugs or did not work at all. 
 
 I based my version on [paagutie/dvl-a50](https://github.com/paagutie/dvl-a50), but more or less rewrote the entire driver and node, implementing the following features:
 
