@@ -39,8 +39,9 @@ $ ros2 service call dvl_a50/enable
 ```
 
 
-# Topics & Services
+# Topics
 Data from the DVL is published on the following topics:
+
 - `dvl/velocity`: _marine_acoustic_msgs/Dvl_
 - `dvl/dead_reckoning`: _geometry_msgs/PoseWithCovarianceStamped_
 - `dvl/odometry`: _nav_msgs/Odometry_
@@ -49,7 +50,10 @@ The velocity report also fills in the `beam_quality` array of the `Dvl` message 
 
 Since the DVL-A50 reports the velocity and dead reckoning at different frequencies, the odometry is published every time either of them is received, with only the `pose` or `twist` updated respectively.
 
-Furthermore, the node will provide the following services. All services use `std_msgs/Trigger`, i.e. they don't take any parameters and return a success state and error/result message.
+
+# Services
+The node will provide the following services. All services use `std_msgs/Trigger`, i.e. they don't take any parameters and return a success state and error/result message.
+
 - `enable`: Enable automatic pinging. The DVL will turn off when it's close to overheating, but this should still only be done when it is submerged. Also note the `enable_on_activate` parameter.
 - `disable`: Disable automatic pinging.
 - `get_config`: Return the DVL's configuration. If successful, the result will be encoded as json in the `message` field.
@@ -60,6 +64,7 @@ Furthermore, the node will provide the following services. All services use `std
 
 # Configuration
 When using the default launch file, the configuration will be loaded from `config/dvl_a50.yml`. In general, the following parameters are recognized:
+
 - `ip_address`: IP address of the DVL. *string, **Required***.
 - `frame`: The DVL's measuring and publishing frame. *string, default=dvl_a50_link*.
 - `rate`: Rate at which to handle messages. Even though the DVL-A50 takes velocity measurements at <=15Hz it is good to set a higher rate here so that additional messages can be handled as well (e.g. dead reckoning reports, command responses). *double, default=30.0*.

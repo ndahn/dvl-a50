@@ -271,7 +271,7 @@ public:
             {
                 for (size_t j = 0; j < 3; j++)
                 {
-                    odometry.twist.covariance[i * 6 + j] = velocity_report.velocity_covar[i * 3 + j];
+                    odometry.twist.covariance[i*6 + j] = velocity_report.velocity_covar[i*3 + j];
                 }
             }
             
