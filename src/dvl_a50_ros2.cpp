@@ -303,7 +303,14 @@ public:
 
         DvlA50::Message json_data = future.get();
         res->success = json_data["success"];
-        res->message = json_data["error_message"];
+        if (res->success)
+        {
+            res->message = json_data["result"];
+        }
+        else
+        {
+            res->message = json_data["error_message"];
+        }
     }
 
     template<typename T>

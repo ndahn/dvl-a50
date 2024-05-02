@@ -1,99 +1,44 @@
-# dvl-a50 
+# About
+This is a ROS2 driver for the [WaterLinked DVL-A50](https://store.waterlinked.com/product/dvl-a50/). Although there are a couple of other ROS2 drivers out there, I found that all of them either were very basic (e.g. no configuration, no service calls), had bugs or did not work at all. 
 
-## Description
-This repository contains a plugin for the use of the [Water Linked](https://store.waterlinked.com/product/dvl-a50/) DVL-A50 sensor in ROS2 with the advantage of making use of its new tools such as composition and Lifecycle management.
+I based my version on [paagutie/dvl-a50](paagutie/dvl-a50), but more or less rewrote the entire driver and node, implementing the following features:
 
-## Requirements
-- [ROS2](https://docs.ros.org/en/galactic/Installation.html) - Galactic or newer
-- Ubuntu 20.04 or newer
-
-### Dependencies
-- [dvl_msgs](https://github.com/paagutie/dvl_msgs)
-- [JSON for Modern C++](https://github.com/nlohmann/json)
+- Driver compiles as a ROS-independent shared library
+- Proper lifecycle node
+- Using [marine_acoustic_msgs](https://github.com/apl-ocean-engineering/marine_msgs/tree/ros2/marine_acoustic_msgs) instead of custom message types
+- Provides services for documented commands
+- Allows to configure DVL on startup
 
 
-## Installation
-- Clone the repositories and compile them:
-```
-$ source /opt/ros/galactic/setup.bash
-$ mkdir -p ~/ros2_ws/src
-$ cd ~/ros2_ws/src
-$ git clone https://github.com/paagutie/dvl_msgs.git
-$ git clone --recurse-submodules https://github.com/paagutie/dvl-a50.git
-$ cd ..
-$ colcon build
-```
+# Dependencies
+- [marine_acoustic_msgs](https://github.com/apl-ocean-engineering/marine_msgs/tree/ros2/marine_acoustic_msgs)
+- [JSON for Modern C++](https://github.com/nlohmann/json) (submodule, see `include/dvl_a50/json/`)
 
-### Usage
-There are three ways to use this package. The first one uses a python script, the second one a node written in c++, for which the external library [Json](https://github.com/nlohmann/json) was used. These versions allow to run a node in a separate process with the benefits of process/fault isolation as well as easier debugging. The latest version uses [Lifecycle](https://index.ros.org/p/lifecycle/github-ros2-demos/) for node management and [composition](https://docs.ros.org/en/foxy/Tutorials/Composition.html) to increase efficiency. Thus it's possible to have more control over the TCP/IP socket configuration needed for communication. 
 
-- First, find and set a static IP address (usually: 192.168.194.90) on your computer. 
+# Topics & Services
+Data from the DVL is published on the following topics:
+- _dvl/odometry_ - `nav_msgs/Odometry`
+- _dvl/velocity_ - `marine_acoustic_msgs/Dvl`
 
-#### Python
-- To use the python script open a new terminal to run the node:
-```
-$ cd ~/ros2_ws
-$ source install/setup.bash
-$ ros2 run dvl_a50 dvl_a50.py --ros-args -p ip_address:='192.168.194.95'
-```
+The velocity report also fills in the `beam_quality` array using the Received Signal Strength Indicator (RSSI) reported for each beam. The valids are in dBm and thus negative. Going counterclockwise from the cable, the beam pads' indices are `1, 2, 3, 0`. See also the [official documentation](https://waterlinked.github.io/dvl/dvl-a50/).
 
-#### C++ 
-- To use the C++ node: 
-```
-$ cd ~/ros2_ws
-$ source install/setup.bash
-$ ros2 run dvl_a50 dvl_a50_sensor --ros-args -p dvl_ip_address:='192.168.2.95'
-or
-$ ros2 launch dvl_a50 dvl_a50.launch.py ip_address:='192.168.194.95'
-```
-#### Lifecycle management (deprecated)
-ROS 2 introduces the concept of managed nodes, also called LifecycleNodes. Managed nodes contain a state machine with a set of predefined states. These states can be changed by invoking a transition id which indicates the succeeding consecutive state.
+![](https://waterlinked.github.io/img/WL-21035-3_DVL-A50_Front_1600_transducers_crop.jpg)
 
-- The node must first be launched using composition. This allows multiple nodes to be executed in a single process with lower overhead and, optionally, more efficient communication (see [Intra Process Communication](https://docs.ros.org/en/foxy/Tutorials/Intra-Process-Communication.html)). The idea of using composition is to be able to make use of its advantages when integrating more than one node, which is the case of a robotic system.
+Furthermore, the node will provide the following services. All services use `std_msgs/Trigger`, i.e. they don't take any parameters and return a success state and error message.
+- _enable_: Enable automatic pinging. The DVL will turn off when it's close to overheating, but this should still only be done when it is submerged.
+- _disable_: Disable automatic pinging.
+- _get_config_: Return the DVL's configuration. If successful, the result will be encoded as json in the `message` field.
+- _calibrate_gyro_: Trigger calibration of the gyro.
+- _reset_dead_reckoning_: Reset the dead reckoning position estimator.
+- _trigger_ping_: Trigger a single ping. This will disable automatic pinging.
 
-```
-$ cd ~/ros2_ws
-$ source install/setup.bash
-$ ros2 launch dvl_a50 dvl_composition.launch.py ip_address:='192.168.194.95'
-```
-- Then in a new terminal the initial options can be viewed using Lifecycle. To know the available transitions:
-```
-$ source /opt/ros/galactic/setup.bash
-$ ros2 lifecycle list /dvl_a50_node
 
-- configure [1]
-	Start: unconfigured
-	Goal: configuring
-- shutdown [5]
-	Start: unconfigured
-	Goal: shuttingdown
-```
-
-- Now it's possible to configure the node to establish communication with the sensor via TCP/IP socket:
-```
-$ ros2 lifecycle set /dvl_a50_node configure
-```
-- To know the current transition state use:
-```
-$ ros2 lifecycle get /dvl_a50_node
-
-inactive [2]
-```
-
-#### Available transitions for this node using Lifecycle management
-```
-$ ros2 lifecycle set /dvl_a50_node activate
-$ ros2 lifecycle set /dvl_a50_node deactivate
-$ ros2 lifecycle set /dvl_a50_node cleanup
-$ ros2 lifecycle set /dvl_a50_node shutdown
-```
-
-## ROS2 Topics 
-- `/dvl/data`
-- `/dvl/position`
-- `dvl/config/status`
-- `dvl/command/response`
-- `dvl/config/command`
-#### Lifecycle management
-- `/dvl_a50_node/transition_event`
-
+# Configuration
+When using the default launch file, the configuration will be loaded from `config/dvl_a50.yml`. In general, the following parameters are recognized:
+- _ip_address_: IP address of the DVL. **Required**.
+- _frame_: The DVL's measuring and publishing frame. Default is `dvl_a50`.
+- _rate_: Rate at which to handle messages. Even though the DVL-A50 takes velocity measurements at <=15Hz it is good to set a higher rate here so that additional messages can be handled as well (e.g. dead reckoning reports, command responses). Default is `30.0`.
+- _speed_of_sound_: The speed of sound to assume (m/s). Default is `1500`.
+- _enable_led_: Whether the LED on the side of the DVL should be enabled. Default is `true`.
+- _mountig_rotation_offset_: Rotation of the DVL in degrees relative to the vehicle frame. Default is `0`.
+- _range_mode_: See [range mode configuration](https://waterlinked.github.io/dvl/dvl-protocol/#range-mode-configuration). Default is `auto`.
