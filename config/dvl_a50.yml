@@ -5,6 +5,6 @@ sensors:
       frame: "dvl_a50_link"
       rate: 30.0
       speed_of_sound: 1500
-      enable_led: true
+      led_enabled: true
       mounting_rotation_offset: 0
       range_mode: "auto"

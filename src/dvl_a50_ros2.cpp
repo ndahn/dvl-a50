@@ -34,7 +34,7 @@ public:
         this->declare_parameter<double>("rate", 30.0);
         this->declare_parameter<bool>("enable_on_activate", false);
         this->declare_parameter<int>("speed_of_sound", 1500);
-        this->declare_parameter<bool>("enable_led", true);
+        this->declare_parameter<bool>("led_enabled", true);
         this->declare_parameter<int>("mountig_rotation_offset", 0);
         this->declare_parameter<std::string>("range_mode", "auto");
 

@@ -39,6 +39,11 @@ add_library(${PROJECT_NAME} SHARED src/dvl_a50.cpp)
 ament_export_targets(${PROJECT_NAME} HAS_LIBRARY_TARGET)
 
 INSTALL(
+  DIRECTORY include
+  DESTINATION include
+)
+
+INSTALL(
   TARGETS ${PROJECT_NAME}
   EXPORT ${PROJECT_NAME}
   LIBRARY DESTINATION lib
