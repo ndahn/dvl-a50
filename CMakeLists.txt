@@ -44,9 +44,13 @@ INSTALL(
   LIBRARY DESTINATION lib
   ARCHIVE DESTINATION lib
   RUNTIME DESTINATION bin
-  DIRECTORY include/ DESTINATION include
 )
 
+# Need to be installed separately
+INSTALL(
+  DIRECTORY include/ 
+  DESTINATION include
+)
 
 # ROS2 Node
 ADD_EXECUTABLE(${PROJECT_NAME}_node 
