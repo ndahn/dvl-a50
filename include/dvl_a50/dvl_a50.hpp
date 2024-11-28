@@ -37,7 +37,7 @@ public:
         int speed_of_sound,
         bool acoustic_enabled,
         bool led_enabled,
-        int mountig_rotation_offset,
+        int mounting_rotation_offset,
         std::string range_mode);
 
     void set_speed_of_sound(int speed_of_sound);
